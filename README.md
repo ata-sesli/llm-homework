@@ -2,7 +2,7 @@
 
 SWE015 homework, Use Case 2. A free-text support message is normalized, classified into an intent, and routed to a team. Low-confidence and out-of-scope messages go to a human agent, and small talk gets a rule-based reply.
 
-Status: data preparation, preprocessing, small-talk rules, the classical baseline and the feedforward network are done. The Transformer, the quantized model and the app are not built yet.
+Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network and the BERT teacher are done. Distillation, the quantized model and the app are not built yet.
 
 ## Setup
 
@@ -92,6 +92,18 @@ Two word-vector sources, both through gensim, are compared on validation:
 The pretrained vectors won. The model is saved to `<storage>/models/ffn.pt`, with its vectors in `ffn_vectors.kv`.
 
 The subword `.bin` version of the pretrained vectors is a 4.5 GB download and was not used.
+
+### 3. BERT teacher
+
+```bash
+python -m src.train_bert
+```
+
+- `bert-base-uncased` with a linear classification head on the `[CLS]` token, fine-tuned end to end.
+- Training: AdamW (lr 5e-5, weight decay 0.01), linear warmup over the first 10% of steps then linear decay, batch 32, 5 epochs, class-weighted cross-entropy.
+- Runs on Apple-silicon GPU (MPS) when available, else CUDA, else CPU.
+- The epoch with the best validation score is kept, along with its τ.
+- Saved to `<storage>/models/bert_teacher/` with `meta.json` (τ, classes, validation metrics).
 
 ## Tests
 
