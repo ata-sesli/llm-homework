@@ -2,7 +2,7 @@
 
 SWE015 homework, Use Case 2. A free-text support message is normalized, classified into an intent, and routed to a team. Low-confidence and out-of-scope messages go to a human agent, and small talk gets a rule-based reply.
 
-Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network, the BERT teacher and the distilled, quantized student are done. Test-set evaluation, benchmarks and the app are not built yet.
+Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network, the BERT teacher, the distilled, quantized student, and the test-set evaluation with benchmarks are done. The app is not built yet.
 
 ## Setup
 
@@ -134,6 +134,45 @@ python -m src.quantize
 - Saved to `<storage>/models/student_int8/` (`model.onnx`, tokenizer, `meta.json`). The intermediate fp32 ONNX file is deleted after the comparison.
 
 The export uses the TorchScript exporter (`dynamo=False`). The default dynamo exporter produced a graph that quantization rejects with a `ShapeInferenceError`. onnxruntime's symbolic shape inference is also skipped during the quantization pre-processing, because it cannot resolve this graph.
+
+The quantized model classifies one message at a time, everywhere: threshold tuning, evaluation and the app. Dynamic quantization picks activation scales per batch, padded positions included, so a message's output would depend on the other messages in its batch. On validation, batching 128 messages together changed 21 of 3,120 predictions.
+
+## Results
+
+```bash
+python -m src.evaluate
+```
+
+`src/evaluate.py` loads every model through `src/models.py`, evaluates it once on the 5,520-message test set with the thresholds tuned on validation, and measures size and latency. It writes [`results.csv`](results.csv).
+
+| Model | Accuracy | OOS recall | In-scope accuracy | Appliance (20) | Size (MB) | Latency (ms) |
+|---|---|---|---|---|---|---|
+| tf-idf + logistic regression | 0.8707 | 0.890 | 0.8664 | 9/20 | 67.3 | 0.66 |
+| Feedforward net on fastText | 0.8250 | 0.859 | 0.8175 | 11/20 | 123.6 | 0.07 |
+| BERT-base (teacher) | 0.9217 | 0.893 | 0.9281 | 11/20 | 439.2 | 55.96 |
+| DistilBERT student, fp32 | 0.9165 | 0.878 | 0.9250 | 11/20 | 269.0 | 27.16 |
+| **DistilBERT student, INT8 ONNX** | 0.9074 | 0.926 | 0.9033 | 13/20 | 68.1 | 2.14 |
+
+- **Hardware:** Apple M1 (4 performance + 4 efficiency cores), 16 GB RAM, macOS 15.7.8, CPU only. PyTorch 2.15 with 4 threads; onnxruntime 1.31.1 with default threads.
+- **Latency:** one message per call, 20 untimed warm-up calls, then the mean of 200 timed calls on validation messages. It covers normalized text to class probabilities, including each model's own featurization (tf-idf, word vectors or tokenizer). The shared preprocessing is the same for every model and is excluded. `results.csv` also has the median and 95th percentile.
+- **Size:** the files each model needs at inference time. For the FFN, that is the network plus the 100k pretrained word vectors (123 MB of the 124 MB). The Transformer sizes include the tokenizer files.
+
+Where the student's speedup comes from (fp32 ONNX measured separately on the same 200 messages):
+
+| Student variant | Latency (ms) |
+|---|---|
+| PyTorch, fp32 | 27.2 |
+| onnxruntime, fp32 | 5.4–5.8 |
+| onnxruntime, INT8 | 2.1 |
+
+About 5× comes from the runtime and about 2.6× from quantization. Using 4 threads instead of the default made no difference.
+
+### Test-set use
+
+- **OOS check (step 6):** before the full evaluation, the 1,000 out-of-scope test messages were scored once, to check the cost of the separate appliance threshold. The result was −0.1 to −0.7 points of OOS recall. The threshold rule was kept, and no threshold was changed because of it.
+- **First evaluation:** the INT8 model was first evaluated in batches of 128 messages. That run gave accuracy 0.9111 and OOS recall 0.904.
+- **Re-evaluation:** after the batch dependence above was found, the INT8 model's thresholds were retuned on validation at batch size 1, and its test row was measured again. The table shows the batch-size-1 result.
+- **Unchanged rows:** the other four rows are unchanged between the two runs.
 
 ## Tests
 

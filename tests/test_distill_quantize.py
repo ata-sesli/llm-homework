@@ -54,3 +54,16 @@ def test_onnx_export_and_int8_quantization_match_pytorch(tiny, tmp_path):
     int8_probs = OnnxClassifier(int8_path, tokenizer).predict_proba(texts, batch_size=3)
     np.testing.assert_allclose(int8_probs, reference, atol=0.02)
     assert int8_path.stat().st_size < fp32_path.stat().st_size
+
+
+def test_int8_predictions_do_not_depend_on_other_messages(tiny, tmp_path):
+    # Dynamic INT8 quantization picks activation scales per batch, so batching messages
+    # together would change each message's output. The classifier runs them one at a time.
+    model, tokenizer = tiny
+    fp32_path, int8_path = tmp_path / "fp32.onnx", tmp_path / "int8.onnx"
+    export_onnx(model, tokenizer, fp32_path)
+    quantize_onnx(fp32_path, int8_path)
+    classifier = OnnxClassifier(int8_path, tokenizer)
+    texts = ["oven", "my oven is broken my card is lost today", "card lost", "weather"]
+    alone = np.concatenate([classifier.predict_proba([t]) for t in texts])
+    np.testing.assert_array_equal(classifier.predict_proba(texts), alone)

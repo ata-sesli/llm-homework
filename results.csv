@@ -1,0 +1,6 @@
+model,accuracy,oos_recall,in_scope_accuracy,appliance_accuracy,size_mb,latency_mean_ms,latency_p50_ms,latency_p95_ms,latency_runs,hardware
+tf-idf + logistic regression,0.8707,0.8900,0.8664,0.4500,67.3372,0.6627,0.6489,0.7132,200,"Apple M1, 16 GB RAM, macOS 15.7.8, CPU only"
+feedforward net on fastText,0.8250,0.8590,0.8175,0.5500,123.6324,0.0676,0.0671,0.0807,200,"Apple M1, 16 GB RAM, macOS 15.7.8, CPU only"
+BERT-base (teacher),0.9217,0.8930,0.9281,0.5500,439.1563,55.9581,54.0265,66.9447,200,"Apple M1, 16 GB RAM, macOS 15.7.8, CPU only"
+"DistilBERT student, fp32",0.9165,0.8780,0.9250,0.5500,269.0302,27.1562,26.4117,30.8040,200,"Apple M1, 16 GB RAM, macOS 15.7.8, CPU only"
+"DistilBERT student, INT8 ONNX",0.9074,0.9260,0.9033,0.6500,68.1400,2.1365,2.0756,2.8112,200,"Apple M1, 16 GB RAM, macOS 15.7.8, CPU only"

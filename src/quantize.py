@@ -59,7 +59,10 @@ class OnnxClassifier:
         self.session = ort.InferenceSession(str(model_path), options, providers=["CPUExecutionProvider"])
         self.tokenizer = tokenizer
 
-    def predict_proba(self, texts, batch_size=128):
+    def predict_proba(self, texts, batch_size=1):
+        # Dynamic quantization picks activation scales per batch (padding included), so a
+        # message's output would depend on the other messages in its batch. One message at a
+        # time matches the app and makes tuning, evaluation and deployment agree.
         out = []
         for i in range(0, len(texts), batch_size):
             batch = self.tokenizer(list(texts[i : i + batch_size]), padding=True, truncation=True,
