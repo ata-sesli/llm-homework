@@ -2,7 +2,7 @@
 
 SWE015 homework, Use Case 2. A free-text support message is normalized, classified into an intent, and routed to a team. Low-confidence and out-of-scope messages go to a human agent, and small talk gets a rule-based reply.
 
-Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network and the BERT teacher are done. Distillation, the quantized model and the app are not built yet.
+Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network, the BERT teacher and the distilled, quantized student are done. Test-set evaluation, benchmarks and the app are not built yet.
 
 ## Setup
 
@@ -57,7 +57,14 @@ Known failure: the name "Owen" in one test message is corrected to "oven".
 
 ## Evaluation rule
 
-`src/evaluation.py` applies the same rule to every model. A message is out-of-scope if the model's top class is `oos` or its top probability is below a threshold τ. τ is tuned on the validation set only, maximizing the mean of in-scope accuracy and OOS recall. Reported metrics: accuracy (all 156 labels), in-scope accuracy and OOS recall.
+`src/evaluation.py` applies the same rule to every model. A message is out-of-scope if the model's top class is `oos` or its top probability is below a threshold. The threshold is τ, or a separate τ_appliance when the top class is an appliance intent. Reported metrics: accuracy (all 156 labels), in-scope accuracy and OOS recall.
+
+Both thresholds are tuned on the validation set only, maximizing the mean of in-scope accuracy and OOS recall:
+
+1. τ is tuned first, as if it were the only threshold.
+2. τ_appliance is tuned next with τ fixed, so predictions for the other 151 classes don't change. Ties go to the strictest value.
+
+Why a second threshold: each appliance intent has 12 training examples against about 100 per CLINC intent, so every model is less confident on them. In the first training run, with a single τ, the quantized student sent 15 of the 20 appliance validation messages to `oos`, although its top class was correct on 18. The 20 appliance rows are too few for the balanced score to notice. Before adopting the rule, it was checked with 2-fold cross-validation inside the validation set. Across all four models, held-out appliance accuracy went up and the held-out balanced score stayed the same within noise. A threshold per domain (11 thresholds) was also tried; it overfit the validation set, losing 3–5 points of held-out score.
 
 ## Models
 
@@ -104,6 +111,29 @@ python -m src.train_bert
 - Runs on Apple-silicon GPU (MPS) when available, else CUDA, else CPU.
 - The epoch with the best validation score is kept, along with its τ.
 - Saved to `<storage>/models/bert_teacher/` with `meta.json` (τ, classes, validation metrics).
+
+### 4. Distilled student
+
+```bash
+python -m src.distill
+```
+
+- Student: `distilbert-base-uncased` (6 layers instead of 12), with a new classification head.
+- The teacher's logits on the training set are computed once. The student is trained with the same optimizer, schedule, batch size and epoch count as the teacher, on the loss α·T²·KL(teacher_T ‖ student_T) + (1−α)·class-weighted cross-entropy, with α = 0.5 and temperature T = 2.
+- The epoch with the best validation score is kept, along with its τ.
+- Saved to `<storage>/models/bert_student/`.
+
+### 5. Quantized student
+
+```bash
+python -m src.quantize
+```
+
+- The student is exported to ONNX with dynamic batch size and sequence length, then quantized with onnxruntime dynamic quantization: weights of the linear layers are stored as 8-bit integers, and activations are quantized at run time. No calibration data is needed.
+- The model runs on CPU with onnxruntime. τ is tuned again on validation for the quantized model.
+- Saved to `<storage>/models/student_int8/` (`model.onnx`, tokenizer, `meta.json`). The intermediate fp32 ONNX file is deleted after the comparison.
+
+The export uses the TorchScript exporter (`dynamo=False`). The default dynamo exporter produced a graph that quantization rejects with a `ShapeInferenceError`. onnxruntime's symbolic shape inference is also skipped during the quantization pre-processing, because it cannot resolve this graph.
 
 ## Tests
 

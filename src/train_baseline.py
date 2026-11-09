@@ -39,21 +39,22 @@ def main():
     for C in C_GRID:
         start = time.perf_counter()
         model = build_pipeline(C).fit(X_train, y_train)
-        tau, m = tune_threshold(model.predict_proba(X_val), model.classes_, y_val)
+        tau, appliance_tau, m = tune_threshold(model.predict_proba(X_val), model.classes_, y_val)
         score = (m["in_scope_accuracy"] + m["oos_recall"]) / 2
         print(
-            f"C={C:<6g} tau={tau:.2f} val_acc={m['accuracy']:.4f} "
+            f"C={C:<6g} tau={tau:.2f} appliance_tau={appliance_tau:.2f} val_acc={m['accuracy']:.4f} "
             f"in_scope={m['in_scope_accuracy']:.4f} oos_recall={m['oos_recall']:.4f} "
             f"({time.perf_counter() - start:.0f}s)",
             flush=True,
         )
         if best is None or score > best[0]:
-            best = (score, C, tau, model)
+            best = (score, C, tau, appliance_tau, model)
 
-    _, C, tau, model = best
+    _, C, tau, appliance_tau, model = best
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": model, "tau": tau, "C": C}, MODEL_PATH)
-    print(f"saved {MODEL_PATH.name}: C={C:g} tau={tau:.2f} size={MODEL_PATH.stat().st_size / 1e6:.1f} MB")
+    joblib.dump({"model": model, "tau": tau, "appliance_tau": appliance_tau, "C": C}, MODEL_PATH)
+    print(f"saved {MODEL_PATH.name}: C={C:g} tau={tau:.2f} appliance_tau={appliance_tau:.2f} "
+          f"size={MODEL_PATH.stat().st_size / 1e6:.1f} MB")
 
 
 if __name__ == "__main__":

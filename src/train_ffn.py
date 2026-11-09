@@ -71,17 +71,17 @@ def fit_ffn(X_train, y_train, X_val, y_val, classes, hidden_dim=512, dropout=0.3
             optimizer.step()  # SGD update
             total += loss.item() * len(batch)
 
-        tau, metrics = tune_threshold(predict_proba(model, X_val), classes, y_val)
+        tau, appliance_tau, metrics = tune_threshold(predict_proba(model, X_val), classes, y_val)
         score = (metrics["in_scope_accuracy"] + metrics["oos_recall"]) / 2
         if best is None or score > best["score"]:
-            best = {"score": score, "epoch": epoch, "tau": tau, "metrics": metrics,
+            best = {"score": score, "epoch": epoch, "tau": tau, "appliance_tau": appliance_tau, "metrics": metrics,
                     "state": copy.deepcopy(model.state_dict())}
         if log_every and epoch % log_every == 0:
             print(f"  epoch {epoch:3d} loss={total / len(y_idx):.4f} val_score={score:.4f} "
                   f"(best {best['score']:.4f} @ {best['epoch']})", flush=True)
 
     model.load_state_dict(best["state"])
-    return {"model": model, "tau": best["tau"], "metrics": best["metrics"],
+    return {"model": model, "tau": best["tau"], "appliance_tau": best["appliance_tau"], "metrics": best["metrics"],
             "epoch": best["epoch"], "score": best["score"], "optimizer": optimizer}
 
 
@@ -104,7 +104,8 @@ def main():
         print(f"[{name}] dim={dim} vectors ready ({time.perf_counter() - start:.0f}s)", flush=True)
         result = fit_ffn(X_train, y_train, X_val, y_val, classes, log_every=25)
         m = result["metrics"]
-        print(f"[{name}] best epoch={result['epoch']} tau={result['tau']:.2f} val_acc={m['accuracy']:.4f} "
+        print(f"[{name}] best epoch={result['epoch']} tau={result['tau']:.2f} appliance_tau={result['appliance_tau']:.2f} "
+              f"val_acc={m['accuracy']:.4f} "
               f"in_scope={m['in_scope_accuracy']:.4f} oos_recall={m['oos_recall']:.4f} "
               f"({time.perf_counter() - start:.0f}s)", flush=True)
         results[name] = (result, vectors)
@@ -119,6 +120,7 @@ def main():
         "state_dict": model.state_dict(),
         "classes": classes.tolist(),
         "tau": result["tau"],
+        "appliance_tau": result["appliance_tau"],
         "input_dim": vectors.vector_size,
         "hidden_dim": model.net[0].out_features,
         "dropout": model.net[2].p,

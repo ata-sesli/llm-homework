@@ -15,6 +15,7 @@ from src.paths import MODELS_DIR  # sets HF_HOME before transformers is imported
 import numpy as np
 import torch
 from torch import nn
+from torch.nn import functional as F
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup
 
 from src.data import load_split
@@ -47,8 +48,18 @@ def predict_proba(model, tokenizer, texts, device, batch_size=128):
     return np.concatenate(out)
 
 
+def distillation_loss(student_logits, teacher_logits, labels, ce_loss_fn, alpha, temperature):
+    """alpha * T^2 * KL(teacher_T || student_T) + (1 - alpha) * hard-label loss (Hinton et al., 2015)."""
+    T = temperature
+    soft = F.kl_div(F.log_softmax(student_logits / T, dim=1), F.softmax(teacher_logits / T, dim=1),
+                    reduction="batchmean") * T * T
+    return alpha * soft + (1 - alpha) * ce_loss_fn(student_logits, labels)
+
+
 def fit_bert(model, tokenizer, train_texts, train_labels, val_texts, val_labels, classes,
-             epochs=5, lr=5e-5, batch_size=32, warmup=0.1, device="cpu", seed=SEED, log_every=0):
+             epochs=5, lr=5e-5, batch_size=32, warmup=0.1, device="cpu", seed=SEED, log_every=0,
+             teacher_logits=None, alpha=0.5, temperature=2.0):
+    """Fine-tune with class-weighted cross-entropy, or distil when teacher_logits (train order) are given."""
     torch.manual_seed(seed)
     classes = np.asarray(classes)
     index = {c: i for i, c in enumerate(classes)}
@@ -62,6 +73,7 @@ def fit_bert(model, tokenizer, train_texts, train_labels, val_texts, val_labels,
     scheduler = get_linear_schedule_with_warmup(optimizer, int(warmup * epochs * steps_per_epoch),
                                                 epochs * steps_per_epoch)
     loss_fn = nn.CrossEntropyLoss(weight=weights)
+    teacher = None if teacher_logits is None else torch.as_tensor(np.asarray(teacher_logits), dtype=torch.float32)
     generator = torch.Generator().manual_seed(seed)
 
     best = None
@@ -70,7 +82,12 @@ def fit_bert(model, tokenizer, train_texts, train_labels, val_texts, val_labels,
         start, total = time.perf_counter(), 0.0
         for step, batch in enumerate(torch.randperm(len(y), generator=generator).split(batch_size), 1):
             inputs = encode(tokenizer, [train_texts[i] for i in batch], device)
-            loss = loss_fn(model(**inputs).logits, y[batch].to(device))
+            logits = model(**inputs).logits
+            if teacher is None:
+                loss = loss_fn(logits, y[batch].to(device))
+            else:
+                loss = distillation_loss(logits, teacher[batch].to(device), y[batch].to(device),
+                                         loss_fn, alpha, temperature)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -80,10 +97,11 @@ def fit_bert(model, tokenizer, train_texts, train_labels, val_texts, val_labels,
                 print(f"  epoch {epoch} step {step}/{steps_per_epoch} loss={loss.item():.4f} "
                       f"({time.perf_counter() - start:.0f}s)", flush=True)
 
-        tau, metrics = tune_threshold(predict_proba(model, tokenizer, val_texts, device), classes, val_labels)
+        val_probs = predict_proba(model, tokenizer, val_texts, device)
+        tau, appliance_tau, metrics = tune_threshold(val_probs, classes, val_labels)
         score = (metrics["in_scope_accuracy"] + metrics["oos_recall"]) / 2
         if best is None or score > best["score"]:
-            best = {"score": score, "epoch": epoch, "tau": tau, "metrics": metrics,
+            best = {"score": score, "epoch": epoch, "tau": tau, "appliance_tau": appliance_tau, "metrics": metrics,
                     "state": {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}}
         if log_every:
             print(f"epoch {epoch}: loss={total / len(y):.4f} tau={tau:.2f} val_acc={metrics['accuracy']:.4f} "
@@ -91,7 +109,7 @@ def fit_bert(model, tokenizer, train_texts, train_labels, val_texts, val_labels,
                   f"score={score:.4f} ({time.perf_counter() - start:.0f}s)", flush=True)
 
     model.load_state_dict(best["state"])
-    return {"model": model, "tau": best["tau"], "metrics": best["metrics"],
+    return {"model": model, "tau": best["tau"], "appliance_tau": best["appliance_tau"], "metrics": best["metrics"],
             "epoch": best["epoch"], "score": best["score"]}
 
 
@@ -112,12 +130,13 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     result["model"].save_pretrained(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
-    meta = {"tau": result["tau"], "epoch": result["epoch"], "val_metrics": result["metrics"],
-            "classes": classes.tolist(), "base_model": BASE_MODEL}
+    meta = {"tau": result["tau"], "appliance_tau": result["appliance_tau"], "epoch": result["epoch"],
+            "val_metrics": result["metrics"], "classes": classes.tolist(), "base_model": BASE_MODEL}
     (OUTPUT_DIR / "meta.json").write_text(json.dumps(meta, indent=2))
     size = sum(p.stat().st_size for p in OUTPUT_DIR.iterdir()) / 1e6
     m = result["metrics"]
     print(f"saved {OUTPUT_DIR.name}: epoch={result['epoch']} tau={result['tau']:.2f} "
+          f"appliance_tau={result['appliance_tau']:.2f} "
           f"in_scope={m['in_scope_accuracy']:.4f} oos_recall={m['oos_recall']:.4f} size={size:.0f} MB")
 
 
