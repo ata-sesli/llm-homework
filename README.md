@@ -2,17 +2,49 @@
 
 SWE015 homework, Use Case 2. A free-text support message is normalized, classified into an intent, and routed to a team. Low-confidence and out-of-scope messages go to a human agent, and small talk gets a rule-based reply.
 
-Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network, the BERT teacher, the distilled, quantized student, and the test-set evaluation with benchmarks, and the Gradio app are done.
+Four models are compared on the same test set: tf-idf + logistic regression, a feedforward network on fastText vectors, a fine-tuned BERT, and a DistilBERT student distilled from it and quantized to INT8. The Gradio app routes with the quantized student and shows all four side by side. The trained models are on the Hugging Face Hub: [atasesli/ticket-router](https://huggingface.co/atasesli/ticket-router).
 
-## Setup
+## Quick start
 
-Requires Python 3.13. gensim has no Python 3.14 wheels yet.
+Requires Python 3.13 and about 3 GB of free disk space (packages, data and models).
 
 ```bash
+git clone https://github.com/ata-sesli/llm-homework.git
+cd llm-homework
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python -m src.prepare_data
+hf download atasesli/ticket-router --local-dir "$(python -c 'from src.paths import MODELS_DIR; print(MODELS_DIR)')"
+python app.py
 ```
+
+Then open http://127.0.0.1:7860. The sections below explain each step, and how to train the models yourself instead of downloading them.
+
+## Architecture
+
+![Architecture of the running app](docs/architecture.svg)
+
+The diagram follows one message through the running app (`app.py`, `src/router.py`), from the browser to the routing decision. The source is [`docs/architecture.svg`](docs/architecture.svg); [`docs/architecture.png`](docs/architecture.png) is a 3200×1800 export for the slides.
+
+## Technique map
+
+| Area | Technique | Component |
+|---|---|---|
+| A · Neural networks | Feedforward network trained with SGD and backpropagation, with dropout | [`src/train_ffn.py`](src/train_ffn.py) |
+| B · Classical NLP | Regex normalization and model-code extraction | [`src/preprocess.py`](src/preprocess.py) |
+| B · Classical NLP | Minimum edit distance (Levenshtein) correction of misspelled product names | [`src/preprocess.py`](src/preprocess.py) |
+| B · Classical NLP | ELIZA-style rules with pronoun reflection for small talk | [`src/rules.py`](src/rules.py) |
+| B · Classical NLP | tf-idf + logistic regression baseline | [`src/train_baseline.py`](src/train_baseline.py) |
+| B · Classical NLP | Averaged fastText word embeddings | [`src/embeddings.py`](src/embeddings.py) |
+| C · Transformers | BERT fine-tuned for intent classification, with its WordPiece tokenizer | [`src/train_bert.py`](src/train_bert.py) |
+| D · Efficient models | Knowledge distillation into DistilBERT | [`src/distill.py`](src/distill.py) |
+| D · Efficient models | ONNX export, dynamic INT8 quantization, ONNX Runtime | [`src/quantize.py`](src/quantize.py) |
+| D · Efficient models | Benchmarking accuracy, size and latency | [`src/evaluate.py`](src/evaluate.py) |
+
+## Setup
+
+Requires Python 3.13: gensim has no Python 3.14 wheels yet. The [Quick start](#quick-start) commands create a virtual environment and install `requirements.txt`.
 
 ### Storage location (optional)
 
@@ -41,6 +73,18 @@ There are 156 labels: 150 CLINC intents, 5 appliance intents and `oos`. The rout
 Every model is trained on `train.csv`, tuned on `val.csv`, and evaluated once on `test.csv`. The rerun is deterministic: seed 42 and a pinned source commit.
 
 The official CLINC splits already contain 5 duplicate texts across train/val/test, some with different labels. They are kept so the test set stays identical to the standard benchmark.
+
+## Download the trained models
+
+The trained models are not in this repository. They are on the Hugging Face Hub at [atasesli/ticket-router](https://huggingface.co/atasesli/ticket-router) (about 965 MB). Download them into `<storage>/models/`:
+
+```bash
+hf download atasesli/ticket-router --local-dir "$(python -c 'from src.paths import MODELS_DIR; print(MODELS_DIR)')"
+```
+
+The `hf` command is installed with the requirements. The download gives the five models of the results table, with their tuned thresholds, so no training is needed to run the app or `python -m src.evaluate`. The app also needs `python -m src.prepare_data` from the previous section: it builds the intent-to-team map and the training vocabulary used by the spelling correction.
+
+To train the models yourself instead, run the commands in [Models](#models) in order.
 
 ## Preprocessing and rules
 
@@ -169,7 +213,7 @@ About 5× comes from the runtime and about 2.6× from quantization. Using 4 thre
 
 ### Test-set use
 
-- **OOS check (step 6):** before the full evaluation, the 1,000 out-of-scope test messages were scored once, to check the cost of the separate appliance threshold. The result was −0.1 to −0.7 points of OOS recall. The threshold rule was kept, and no threshold was changed because of it.
+- **OOS check:** before the full evaluation, the 1,000 out-of-scope test messages were scored once, to check the cost of the separate appliance threshold. The result was −0.1 to −0.7 points of OOS recall. The threshold rule was kept, and no threshold was changed because of it.
 - **First evaluation:** the INT8 model was first evaluated in batches of 128 messages. That run gave accuracy 0.9111 and OOS recall 0.904.
 - **Re-evaluation:** after the batch dependence above was found, the INT8 model's thresholds were retuned on validation at batch size 1, and its test row was measured again. The table shows the batch-size-1 result.
 - **Unchanged rows:** the other four rows are unchanged between the two runs.
@@ -180,7 +224,7 @@ About 5× comes from the runtime and about 2.6× from quantization. Using 4 thre
 python app.py
 ```
 
-Then open http://127.0.0.1:7860. The app needs the trained models in `<storage>/models/`.
+Then open http://127.0.0.1:7860. The app needs the prepared data and the trained models in `<storage>/models/`, downloaded or trained as described above.
 
 For each message, `src/router.py`:
 
@@ -199,4 +243,10 @@ python -m pytest -q
 ## Data sources
 
 - **CLINC150 (`data_oos_plus.json`, `domains.json`):** Larson et al., 2019, *An Evaluation Dataset for Intent Classification and Out-of-Scope Prediction*, EMNLP-IJCNLP. https://github.com/clinc/oos-eval (CC BY 3.0), commit `828f809`.
-- **`data/appliance_examples.csv`:** 100 home-appliance support messages over 5 intents (`appliance_repair`, `appliance_spare_parts`, `appliance_warranty`, `appliance_installation`, `appliance_usage`), 20 each, split 60/20/20 per intent. The first draft was written with an AI assistant; see the AI usage statement.
+- **`data/appliance_examples.csv`:** 100 home-appliance support messages over 5 intents (`appliance_repair`, `appliance_spare_parts`, `appliance_warranty`, `appliance_installation`, `appliance_usage`), 20 each, split 60/20/20 per intent. The first draft was written with an AI assistant; see [AI usage](#ai-usage).
+- **Pretrained models:** [`bert-base-uncased`](https://huggingface.co/google-bert/bert-base-uncased) and [`distilbert-base-uncased`](https://huggingface.co/distilbert/distilbert-base-uncased) (Apache 2.0).
+- **Word vectors:** fastText `wiki-news-300d-1M-subword` through gensim-data (`fasttext-wiki-news-subwords-300`). Mikolov et al., 2018, *Advances in Pre-Training Distributed Word Representations*, LREC (CC BY-SA 3.0).
+
+## AI usage
+
+Claude Code (Anthropic) was used to write and debug the code and tests, to draft this README, the architecture diagram and the model card, and to write the first draft of the 100 appliance examples. The use case, the data, the design decisions and the review of every result are the author's own. All numbers in this README come from runs of this code on the hardware stated above.

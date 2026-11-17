@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#0f172a">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="900" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="20" y="38" font-size="22" font-weight="700">Customer Support Ticket Router: architecture of the running app</text>
+
+  <!-- Browser -->
+  <rect x="20" y="70" width="260" height="730" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="36" y="96" font-size="15" font-weight="700">Browser: Gradio UI</text>
+  <text x="36" y="114" font-size="12" fill="#475569">http://127.0.0.1:7860 (same machine)</text>
+
+  <rect x="36" y="135" width="228" height="150" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="50" y="160" font-weight="700">Input</text>
+  <text x="50" y="184">User types a support message</text>
+  <text x="50" y="202">in English or Turkish</text>
+  <text x="50" y="226">• Support message textbox</text>
+  <text x="50" y="246">• Route button or Enter</text>
+  <text x="50" y="266">• 9 example messages</text>
+
+  <rect x="36" y="480" width="228" height="300" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="50" y="505" font-weight="700">Output</text>
+  <text x="50" y="530">Decision card:</text>
+  <text x="50" y="548">• rule or canned reply, or</text>
+  <text x="50" y="566">• “Routed to: &lt;team&gt;” with</text>
+  <text x="50" y="584">   intent and confidence, or</text>
+  <text x="50" y="602">• “Human agent” with the reason</text>
+  <text x="50" y="628">Preprocessing details:</text>
+  <text x="50" y="646">normalized text, model codes,</text>
+  <text x="50" y="664">spelling corrections</text>
+  <text x="50" y="690">Comparison table, one row per</text>
+  <text x="50" y="708">model: intent, confidence, team,</text>
+  <text x="50" y="726">latency (ms)</text>
+
+  <!-- Python process -->
+  <rect x="305" y="70" width="1280" height="730" rx="10" fill="#ffffff" stroke="#334155" stroke-width="1.5" stroke-dasharray="8 5"/>
+  <text x="321" y="96" font-size="15" font-weight="700">Python 3.13 process: app.py (Gradio server)</text>
+  <text x="660" y="96" font-size="13" fill="#475569">· CPU only · Apple M1, 16 GB RAM · one message at a time</text>
+
+  <!-- Input arrow -->
+  <line x1="264" y1="230" x2="328" y2="230" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Preprocessing -->
+  <rect x="330" y="125" width="265" height="345" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="345" y="150" font-size="15" font-weight="700">1  Preprocessing</text>
+  <text x="345" y="168" font-size="12" fill="#475569">src/preprocess.py, same for every model</text>
+  <text x="345" y="194">1. Extract model codes (regex)</text>
+  <text x="345" y="212" fill="#475569">    DW-6534, wm4410 → WM-4410</text>
+  <text x="345" y="236">2. NFKC, lowercase, fold Turkish</text>
+  <text x="345" y="254" fill="#475569">    letters (ç ğ ı ö ş ü → c g i o s u)</text>
+  <text x="345" y="278">3. Collapse repeated letters,</text>
+  <text x="345" y="296">    remove punctuation</text>
+  <text x="345" y="320">4. Turkish product names → English</text>
+  <text x="345" y="338" fill="#475569">    bulaşık makinem → dishwasher</text>
+  <text x="345" y="362">5. Fix misspelled product names</text>
+  <text x="345" y="380" fill="#475569">    (Levenshtein) dishwaser → dishwasher</text>
+  <text x="345" y="410" font-weight="700">Out: normalized text</text>
+  <text x="345" y="436" font-size="12" fill="#475569">Empty after cleaning: ask the user</text>
+  <text x="345" y="452" font-size="12" fill="#475569">to type a message; no model runs.</text>
+
+  <!-- Model files (startup) -->
+  <rect x="330" y="500" width="265" height="280" rx="8" fill="#f8fafc" stroke="#64748b" stroke-dasharray="6 4"/>
+  <text x="345" y="525" font-size="15" font-weight="700">Model files</text>
+  <text x="345" y="543" font-size="12" fill="#475569">loaded once at startup (src/models.py)</text>
+  <text x="345" y="568">&lt;storage&gt;/models/ on the external disk:</text>
+  <text x="345" y="588">• baseline.joblib</text>
+  <text x="345" y="606">• ffn.pt, ffn_vectors.kv</text>
+  <text x="345" y="624">• bert_teacher/</text>
+  <text x="345" y="642">• student_int8/model.onnx + tokenizer</text>
+  <text x="345" y="660">• labels.json (intent → team)</text>
+  <text x="345" y="686" fill="#475569">Each model stores its own τ values.</text>
+  <text x="345" y="704" fill="#475569">Trained offline by src/train_*.py,</text>
+  <text x="345" y="722" fill="#475569">distill.py and quantize.py.</text>
+  <text x="345" y="748" fill="#475569">3 warm-up messages before serving.</text>
+
+  <!-- Fan-out bus -->
+  <line x1="595" y1="300" x2="625" y2="300" stroke="#334155" stroke-width="1.8"/>
+  <line x1="625" y1="165" x2="625" y2="693" stroke="#334155" stroke-width="1.8"/>
+  <line x1="625" y1="165" x2="648" y2="165" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="625" y1="309" x2="648" y2="309" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="625" y1="437" x2="648" y2="437" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="625" y1="565" x2="648" y2="565" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="625" y1="693" x2="648" y2="693" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Rules -->
+  <rect x="650" y="125" width="380" height="80" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="665" y="150" font-size="15" font-weight="700">2a  Small-talk rules</text>
+  <text x="820" y="150" font-size="12" fill="#475569">src/rules.py</text>
+  <text x="665" y="172">ELIZA-style regex; must match the whole message</text>
+  <text x="665" y="192" fill="#475569">greetings, thanks, goodbyes, “are you a bot”</text>
+
+  <!-- Classifiers -->
+  <text x="650" y="236" font-size="15" font-weight="700">2b  Four classifiers</text>
+  <text x="810" y="236" font-size="12" fill="#475569">156 classes: 150 CLINC + 5 appliance intents + oos</text>
+
+  <rect x="650" y="250" width="380" height="118" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="665" y="274" font-size="14" font-weight="700">tf-idf + logistic regression</text>
+  <text x="665" y="296">word 1–2-grams + char 2–5-grams, C = 100</text>
+  <text x="665" y="318">scikit-learn · float64 · 67.3 MB</text>
+  <text x="665" y="340" fill="#475569">τ = 0.65 · τ_appliance = 0.35</text>
+
+  <rect x="650" y="378" width="380" height="118" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="665" y="402" font-size="14" font-weight="700">Feedforward net on fastText vectors</text>
+  <text x="665" y="424">mean of 300-d word vectors → 512 → 156</text>
+  <text x="665" y="446">PyTorch · fp32 · 123.6 MB (incl. vectors)</text>
+  <text x="665" y="468" fill="#475569">τ = 0.80 · τ_appliance = 0.50</text>
+
+  <rect x="650" y="506" width="380" height="118" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="665" y="530" font-size="14" font-weight="700">BERT-base (teacher)</text>
+  <text x="665" y="552">12 layers, fine-tuned, up to 64 tokens</text>
+  <text x="665" y="574">PyTorch · fp32 · 439.2 MB</text>
+  <text x="665" y="596" fill="#475569">τ = 0.75 · τ_appliance = 0.55</text>
+
+  <rect x="650" y="634" width="380" height="118" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="2.5"/>
+  <text x="665" y="658" font-size="14" font-weight="700">DistilBERT student: decides the route</text>
+  <text x="665" y="680">6 layers, distilled from the teacher</text>
+  <text x="665" y="702">ONNX Runtime · INT8 dynamic quantization · 68.1 MB</text>
+  <text x="665" y="724" fill="#475569">τ = 0.80 · τ_appliance = 0.40</text>
+
+  <!-- Classifiers to post-processing -->
+  <line x1="1030" y1="309" x2="1063" y2="309" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="1030" y1="437" x2="1063" y2="437" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="1030" y1="565" x2="1063" y2="565" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="1030" y1="693" x2="1063" y2="693" stroke="#ea580c" stroke-width="2.2" marker-end="url(#arrow)"/>
+
+  <!-- Post-processing -->
+  <rect x="1065" y="250" width="255" height="502" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="1080" y="275" font-size="15" font-weight="700">3  Post-processing</text>
+  <text x="1080" y="293" font-size="12" fill="#475569">per model · src/evaluation.py, src/router.py</text>
+  <text x="1080" y="320">Softmax over the 156 classes</text>
+  <text x="1080" y="338">→ top class and confidence p</text>
+  <text x="1080" y="368" font-weight="700">Out-of-scope rule</text>
+  <text x="1080" y="388">oos if the top class is oos, or</text>
+  <text x="1080" y="406">p &lt; τ (τ_appliance when the top</text>
+  <text x="1080" y="424">class is an appliance intent)</text>
+  <text x="1080" y="454" font-weight="700">Team lookup (labels.json)</text>
+  <text x="1080" y="474">team = the intent's domain:</text>
+  <text x="1080" y="492">10 CLINC domains or appliance</text>
+  <text x="1080" y="510">support</text>
+  <text x="1080" y="532">oos → human agent</text>
+  <text x="1080" y="550">small-talk intent → canned reply</text>
+  <text x="1080" y="590" fill="#475569">Thresholds were tuned on the</text>
+  <text x="1080" y="608" fill="#475569">validation set, never on test.</text>
+  <text x="1080" y="638" fill="#475569">Latency per model is measured</text>
+  <text x="1080" y="656" fill="#475569">around its predict call.</text>
+
+  <!-- Rules to decision -->
+  <polyline points="1030,165 1452,165 1452,248" fill="none" stroke="#16a34a" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="1090" y="157" font-size="11" fill="#475569">rule reply, if a rule matched</text>
+
+  <!-- Post-processing to decision -->
+  <line x1="1320" y1="400" x2="1348" y2="400" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Decision -->
+  <rect x="1350" y="250" width="220" height="330" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+  <text x="1365" y="275" font-size="15" font-weight="700">4  Decision</text>
+  <text x="1365" y="293" font-size="12" fill="#475569">Router.route(), src/router.py</text>
+  <text x="1365" y="322">1. A rule matched?</text>
+  <text x="1365" y="340">    → rule reply, no team</text>
+  <text x="1365" y="368">2. Otherwise the INT8</text>
+  <text x="1365" y="386">    student's result decides:</text>
+  <text x="1365" y="406">    • team, or</text>
+  <text x="1365" y="424">    • human agent, or</text>
+  <text x="1365" y="442">    • canned small-talk reply</text>
+  <text x="1365" y="470">3. The other three models</text>
+  <text x="1365" y="488">    are shown for comparison</text>
+  <text x="1365" y="506">    only.</text>
+
+  <!-- Return to UI -->
+  <polyline points="1460,580 1460,835 150,835 150,782" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="470" y="827" font-size="12" fill="#475569">decision, preprocessing details, and every model's intent, confidence, team and latency</text>
+
+  <!-- Legend -->
+  <text x="20" y="880" font-size="12" fill="#475569">Solid arrows: data flow for each message · Dashed box: loaded once at startup · Orange: the quantized model that makes the routing decision · Sizes are the files each model needs at inference time.</text>
+</svg>
