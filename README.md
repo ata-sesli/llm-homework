@@ -2,7 +2,7 @@
 
 SWE015 homework, Use Case 2. A free-text support message is normalized, classified into an intent, and routed to a team. Low-confidence and out-of-scope messages go to a human agent, and small talk gets a rule-based reply.
 
-Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network, the BERT teacher, the distilled, quantized student, and the test-set evaluation with benchmarks are done. The app is not built yet.
+Status: data preparation, preprocessing, small-talk rules, the classical baseline, the feedforward network, the BERT teacher, the distilled, quantized student, and the test-set evaluation with benchmarks, and the Gradio app are done.
 
 ## Setup
 
@@ -173,6 +173,22 @@ About 5× comes from the runtime and about 2.6× from quantization. Using 4 thre
 - **First evaluation:** the INT8 model was first evaluated in batches of 128 messages. That run gave accuracy 0.9111 and OOS recall 0.904.
 - **Re-evaluation:** after the batch dependence above was found, the INT8 model's thresholds were retuned on validation at batch size 1, and its test row was measured again. The table shows the batch-size-1 result.
 - **Unchanged rows:** the other four rows are unchanged between the two runs.
+
+## App
+
+```bash
+python app.py
+```
+
+Then open http://127.0.0.1:7860. The app needs the trained models in `<storage>/models/`.
+
+For each message, `src/router.py`:
+
+1. runs the shared preprocessing and shows the normalized text, extracted model codes and spelling corrections;
+2. answers with the ELIZA-style rules if the message is small talk;
+3. otherwise routes by the quantized student (INT8 ONNX): the predicted intent's domain is the team, and out-of-scope or below-threshold predictions go to a human agent. A predicted small-talk intent gets a canned reply.
+
+The baseline, the feedforward net and the BERT teacher run on the same normalized text and are shown side by side, with each model's intent, confidence, team and latency. Each model applies its own validation-tuned thresholds. The models are warmed up at startup, so the latencies are representative from the first message. They are single measurements, not the benchmark above.
 
 ## Tests
 
